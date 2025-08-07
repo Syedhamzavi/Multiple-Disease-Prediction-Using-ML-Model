@@ -1,103 +1,127 @@
-import pandas as pd
-from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import StandardScaler, LabelEncoder
-from sklearn.linear_model import LogisticRegression, LinearRegression
-from sklearn.metrics import accuracy_score, mean_squared_error
 import joblib
+import pandas as pd
 import os
+import numpy as np
 
-def preprocess_data(data):
-    # Encode non-numeric columns
-    label_encoders = {}
-    for column in data.select_dtypes(include=['object']).columns:
-        le = LabelEncoder()
-        data[column] = le.fit_transform(data[column])
-        label_encoders[column] = le
-    return data, label_encoders
+MODEL_PATHS = {
+    "Diabetes": "model1.pkl",
+    "Heart Disease": "model2.pkl",
+    "Parkinson's": "model3.pkl"
+}
 
-def train_classification_model(file_name, model_name, scaler_name):
+HEART_COMPONENTS = {
+    "scaler": "scaler2.pkl",
+    "selector": "features_model2.pkl"
+}
+
+# Complete feature mapping (UI names → CSV names)
+FEATURE_MAPPING = {
+    "Heart Disease": {
+        "Age": "age",
+        "Sex": "sex",
+        "ChestPainType": "cp",
+        "RestingBP": "trestbps",
+        "Cholesterol": "chol",
+        "FastingBS": "fbs",
+        "RestingECG": "restecg",
+        "MaxHR": "thalach",
+        "ExerciseAngina": "exang",
+        "Oldpeak": "oldpeak",
+        "ST_Slope": "slope",
+        "Ca": "ca",
+        "Thal": "thal"
+    }
+}
+
+def predict_disease(disease, user_input):
+    """Predict disease using the appropriate model"""
     try:
-        # Load dataset
-        data = pd.read_csv(file_name)
-        print(f"Loaded {file_name} successfully.")
-
-        # Preprocess data
-        data, label_encoders = preprocess_data(data)
-
-        # Separate features and target variable
-        X = data.iloc[:, :-1].values
-        y = data.iloc[:, -1].values
-
-        # Split the dataset into training and testing sets
-        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
-
-        # Standardize the data
-        scaler = StandardScaler()
-        X_train_scaled = scaler.fit_transform(X_train)
-        X_test_scaled = scaler.transform(X_test)
-
-        # Train a logistic regression model
-        model = LogisticRegression()
-        model.fit(X_train_scaled, y_train)
-
-        # Evaluate the model
-        y_pred = model.predict(X_test_scaled)
-        accuracy = accuracy_score(y_test, y_pred)
-        print(f"{file_name} Model Accuracy: {accuracy:.2f}")
-
-        # Save the scaler and model
-        print(f"Saving scaler to {scaler_name}")
-        joblib.dump(scaler, scaler_name)
-        print(f"Scaler saved to {scaler_name}")
-
-        print(f"Saving model to {model_name}")
-        joblib.dump(model, model_name)
-        print(f"Model saved to {model_name}")
+        # Default response for empty inputs
+        if all(v == 0 for v in user_input.values()):
+            return f"No {disease} Detected (Default - No data entered)"
+        
+        # Verify model exists
+        if not os.path.exists(MODEL_PATHS[disease]):
+            return f"Error: Model file not found for {disease}"
+        
+        model = joblib.load(MODEL_PATHS[disease])
+        
+        # Special handling for Heart Disease
+        if disease == "Heart Disease":
+            # Load preprocessing components
+            scaler = joblib.load(HEART_COMPONENTS["scaler"])
+            selector = joblib.load(HEART_COMPONENTS["selector"])
+            
+            # Map all 13 features to CSV column names
+            mapped_input = {}
+            for app_name, model_name in FEATURE_MAPPING[disease].items():
+                mapped_input[model_name] = user_input[app_name]
+            
+            # Create DataFrame with correct column order
+            input_df = pd.DataFrame([mapped_input.values()], 
+                                  columns=mapped_input.keys())
+            
+            # Apply preprocessing
+            X_scaled = scaler.transform(input_df)
+            X_selected = selector.transform(X_scaled)
+            
+            # Predict
+            prediction = model.predict(X_selected)[0]
+        else:
+            # Original logic for other diseases
+            if disease in FEATURE_MAPPING:
+                mapped_input = {}
+                for app_name, model_name in FEATURE_MAPPING[disease].items():
+                    mapped_input[model_name] = user_input[app_name]
+                # Add unmapped features
+                for feature in user_input:
+                    if feature not in mapped_input:
+                        mapped_input[feature] = user_input[feature]
+                user_input = mapped_input
+            
+            input_df = pd.DataFrame([user_input.values()], columns=user_input.keys())
+            prediction = model.predict(input_df)[0]
+        
+        return f"{disease} Detected" if prediction == 1 else f"No {disease} Detected"
+    
     except Exception as e:
-        print(f"An error occurred: {e}")
+        return f"Error: {str(e)}"
 
-def train_regression_model(file_name, model_name, scaler_name):
+def load_average_values(disease):
+    """Load and calculate average values from dataset"""
+    CSV_PATHS = {
+        "Diabetes": "diabetes.csv",
+        "Heart Disease": "heart.csv",
+        "Parkinson's": "parkinsons.csv"
+    }
+    
     try:
-        # Load dataset
-        data = pd.read_csv(file_name)
-        print(f"Loaded {file_name} successfully.")
-
-        # Preprocess data
-        data, label_encoders = preprocess_data(data)
-
-        # Separate features and target variable
-        X = data.iloc[:, :-1].values
-        y = data.iloc[:, -1].values
-
-        # Split the dataset into training and testing sets
-        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
-
-        # Standardize the data
-        scaler = StandardScaler()
-        X_train_scaled = scaler.fit_transform(X_train)
-        X_test_scaled = scaler.transform(X_test)
-
-        # Train a linear regression model
-        model = LinearRegression()
-        model.fit(X_train_scaled, y_train)
-
-        # Evaluate the model
-        y_pred = model.predict(X_test_scaled)
-        mse = mean_squared_error(y_test, y_pred)
-        print(f"{file_name} Model Mean Squared Error: {mse:.2f}")
-
-        # Save the scaler and model
-        print(f"Saving scaler to {scaler_name}")
-        joblib.dump(scaler, scaler_name)
-        print(f"Scaler saved to {scaler_name}")
-
-        print(f"Saving model to {model_name}")
-        joblib.dump(model, model_name)
-        print(f"Model saved to {model_name}")
+        if disease not in CSV_PATHS or not os.path.exists(CSV_PATHS[disease]):
+            return {}
+            
+        df = pd.read_csv(CSV_PATHS[disease])
+        
+        # Convert categorical columns to numeric
+        categorical_cols = ['cp', 'restecg', 'slope', 'thal'] if disease == "Heart Disease" else []
+        for col in categorical_cols:
+            if col in df.columns:
+                df[col] = pd.to_numeric(df[col], errors='coerce')
+        
+        # Drop target column if exists
+        target_cols = [col for col in df.columns if col.lower() in ["target", "status"]]
+        if target_cols:
+            df = df.drop(columns=target_cols)
+        
+        # Calculate averages and handle missing values
+        averages = df.mean(numeric_only=True).fillna(0).to_dict()
+        
+        # Map CSV column names back to display names for Heart Disease
+        if disease == "Heart Disease":
+            display_mapping = {v: k for k, v in FEATURE_MAPPING[disease].items()}
+            averages = {display_mapping.get(k, k): v for k, v in averages.items()}
+        
+        return averages
+        
     except Exception as e:
-        print(f"An error occurred: {e}")
-
-# Train models for each dataset
-train_classification_model('diabetes.csv', 'model1.pkl', 'scaler1.pkl')
-train_classification_model('heart.csv', 'model2.pkl', 'scaler2.pkl')
-train_regression_model('parkinsons.csv', 'model3.pkl', 'scaler3.pkl')  # Use regression model for Parkinson's dataset
+        print(f"Error loading averages: {e}")
+        return {}
